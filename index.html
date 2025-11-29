@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCG Banning Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f2f2f7;
+            padding: 20px;
+            max-width: 600px;
+            margin: auto;
+        }
+        h1, h2 { text-align: center; }
+        .section {
+            background: white;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            margin-top: 10px;
+            background: #0070f3;
+            color: white;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            border-radius: 6px;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<h1>TCG Banning Tool</h1>
+
+<div class="section" id="joinSection">
+    <h2>Join Room</h2>
+    <input id="roomCode" placeholder="Room Code" style="width:100%;padding:10px;border-radius:8px;">
+    <input id="playerName" placeholder="Your Name (Player1 / Player2)" style="width:100%;padding:10px;border-radius:8px;margin-top:10px;">
+    <button onclick="joinRoom()">Join Room</button>
+</div>
+
+<div class="section hidden" id="deckSection">
+    <h2>Choose 3 Deck Colors</h2>
+    <p>Please choose your 3 decks:</p>
+    <select id="deck1">
+        <option value="">Select Deck 1</option>
+    </select>
+    <select id="deck2">
+        <option value="">Select Deck 2</option>
+    </select>
+    <select id="deck3">
+        <option value="">Select Deck 3</option>
+    </select>
+
+    <button onclick="submitDecks()">Submit Decks</button>
+</div>
+
+<div class="section hidden" id="banSection">
+    <h2>Ban a Deck</h2>
+    <p>Select which deck you want to ban from your opponent’s 3 declared decks.</p>
+    <select id="banSelect"></select>
+    <button onclick="submitBan()">Submit Ban</button>
+</div>
+
+<div class="section hidden" id="resultSection">
+    <h2>Ban Results</h2>
+    <p id="resultText"></p>
+</div>
+
+<script type="module">
+    // --------------------------------------
+    // 🔥 Firebase Setup
+    // --------------------------------------
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
+    import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-database.js";
+
+    // TODO: INSERT YOUR FIREBASE CONFIG HERE
+    const firebaseConfig = {
+        apiKey: "",
+        authDomain: "",
+        databaseURL: "",
+        projectId: "",
+        storageBucket: "",
+        messagingSenderId: "",
+        appId: ""
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const COLORS = ["blue","red","yellow","black","green"];
+
+    // Populate selects
+    window.onload = () => {
+        for (const id of ["deck1","deck2","deck3"]) {
+            const sel = document.getElementById(id);
+            COLORS.forEach(c => {
+                const o = document.createElement("option");
+                o.value = c;
+                o.innerText = c.toUpperCase();
+                sel.appendChild(o);
+            });
+        }
+    };
+
+    let room = "";
+    let player = "";
+
+    window.joinRoom = async function() {
+        room = document.getElementById("roomCode").value;
+        player = document.getElementById("playerName").value;
+
+        if (!room || !player) return alert("Enter room code and name!");
+
+        document.getElementById("joinSection").classList.add("hidden");
+        document.getElementById("deckSection").classList.remove("hidden");
+
+        const roomRef = ref(db, "rooms/" + room);
+
+        // Create room if doesn't exist
+        const snap = await get(roomRef);
+        if (!snap.exists()) {
+            await set(roomRef, {
+                player1: { decks: [], ban: "" },
+                player2: { decks: [], ban: "" }
+            });
+        }
+
+        // Listen for opponent decks → enable ban section
+        onValue(roomRef, (s) => {
+            const data = s.val();
+            const me = data[player];
+            const opp = player === "player1" ? data.player2 : data.player1;
+
+            // Opponent submitted decks → load them
+            if (opp.decks?.length === 3) {
+                document.getElementById("banSection").classList.remove("hidden");
+
+                const banSelect = document.getElementById("banSelect");
+                banSelect.innerHTML = "";
+                opp.decks.forEach(d => {
+                    const o = document.createElement("option");
+                    o.value = d;
+                    o.innerText = d.toUpperCase();
+                    banSelect.appendChild(o);
+                });
+            }
+
+            // Both bans submitted → reveal
+            if (data.player1.ban && data.player2.ban) {
+                document.getElementById("resultSection").classList.remove("hidden");
+                document.getElementById("resultText").innerHTML =
+                    `<strong>Results:</strong><br>
+                     Player 1 banned: ${data.player1.ban.toUpperCase()}<br>
+                     Player 2 banned: ${data.player2.ban.toUpperCase()}`;
+            }
+        });
+    };
+
+    window.submitDecks = function() {
+        const d1 = deck1.value, d2 = deck2.value, d3 = deck3.value;
+
+        if (!d1 || !d2 || !d3) return alert("Choose 3 decks!");
+        if (new Set([d1,d2,d3]).size !== 3) return alert("Decks must be unique!");
+
+        update(ref(db, "rooms/" + room + "/" + player), {
+            decks: [d1, d2, d3]
+        });
+
+        document.getElementById("deckSection").classList.add("hidden");
+    };
+
+    window.submitBan = function() {
+        update(ref(db, "rooms/" + room + "/" + player), {
+            ban: document.getElementById("banSelect").value
+        });
+
+        document.getElementById("banSection").classList.add("hidden");
+    };
+
+</script>
+
+</body>
+</html>
